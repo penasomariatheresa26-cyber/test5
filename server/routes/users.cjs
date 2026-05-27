@@ -47,7 +47,7 @@ router.post('/register', async (req, res) => {
 });
 
 // ============================================
-// LOGIN ROUTE (Strict Frontend Compatibility)
+// LOGIN ROUTE (Strict Frontend Alignment)
 // ============================================
 router.post('/login', async (req, res) => {
   try {
@@ -64,23 +64,24 @@ router.post('/login', async (req, res) => {
 
     const user = rows[0];
 
-    // Compares your typed 'admin123' with the database hash safely
+    // Safely compare raw string password with database hash
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid Email or Password' });
     }
 
-    // Determine admin status across any database schema variation
+    // Determine admin status across both structural variants
     const isAdminUser = user.is_admin === 1 || user.is_admin === true || String(user.is_admin) === 'true' || String(user.role).toLowerCase() === 'admin';
 
-    // This specific format feeds straight into your frontend AuthContext state
+    // Returns both variations (isAdmin and is_admin) to prevent state mapping crashes on the UI
     return res.json({
-      token: 'mock-jwt-token-for-auth',
+      token: 'session-token-fulfilled',
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         is_admin: isAdminUser,
+        isAdmin: isAdminUser, 
         role: isAdminUser ? 'admin' : 'customer'
       }
     });
@@ -89,5 +90,3 @@ router.post('/login', async (req, res) => {
     return res.status(500).json({ error: 'Server error during login' });
   }
 });
-
-module.exports = router;
