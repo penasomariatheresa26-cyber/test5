@@ -16,6 +16,7 @@ router.post('/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Dynamic field tracking depending on your MySQL setup
     const [columns] = await db.query('SHOW COLUMNS FROM users');
     const columnNames = columns.map(c => c.Field.toLowerCase());
 
@@ -64,16 +65,16 @@ router.post('/login', async (req, res) => {
 
     const user = rows[0];
 
-    // Safely compare raw string password with database hash
+    // Compares raw string input password with the database hash safely
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid Email or Password' });
     }
 
-    // Determine admin status across both structural variants
+    // Determine admin status across multiple variations
     const isAdminUser = user.is_admin === 1 || user.is_admin === true || String(user.is_admin) === 'true' || String(user.role).toLowerCase() === 'admin';
 
-    // Returns both variations (isAdmin and is_admin) to prevent state mapping crashes on the UI
+    // Returns BOTH camelCase and snake_case properties to fulfill any frontend requirements
     return res.json({
       token: 'session-token-fulfilled',
       user: {
@@ -90,3 +91,8 @@ router.post('/login', async (req, res) => {
     return res.status(500).json({ error: 'Server error during login' });
   }
 });
+
+// ============================================
+// CRITICAL: CRASH PREVENTION EXPORT
+// ============================================
+module.exports = router;
