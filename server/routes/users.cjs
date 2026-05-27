@@ -7,10 +7,11 @@ const { v4: uuidv4 } = require('uuid');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 
-// GET all users
+// 1. FETCH & SHOW ALL USERS
 router.get('/', async (req, res) => {
   try {
-    const result = await db.query(`
+    // Destructuring [rows] directly ensures compatibility with mysql2
+    const [rows] = await db.query(`
       SELECT 
         id,
         name,
@@ -23,14 +24,14 @@ router.get('/', async (req, res) => {
       ORDER BY created_at DESC
     `);
 
-    res.json(result.rows);
+    res.json(rows);
   } catch (error) {
     console.error('[get /api/users]', error.message);
-    res.status(500).json({ error: 'failed to fetch users' });
+    res.status(500).json({ error: 'failed to fetch users from database' });
   }
 });
 
-// REGISTER user
+// 2. REGISTER USER (Records dynamically to database)
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -38,34 +39,39 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'all fields are required' });
     }
 
-    const existing = await db.query(
+    // Verify existing user records
+    const [existing] = await db.query(
       'SELECT id FROM users WHERE email = ?',
       [email.toLowerCase()]
     );
-    if (existing.rows.length > 0) {
+    
+    if (existing.length > 0) {
       return res.status(400).json({ error: 'email already exists' });
     }
 
-    // hash password
+    // Generate dynamic values (UUID and secure Hash)
+    const userId = uuidv4();
     const passwordHash = await bcrypt.hash(password, 10);
 
+    // Save record to database
     await db.query(
       `INSERT INTO users 
-       (name, email, password, role, wallet_balance) 
-       VALUES (?, ?, ?, 'user', 0.00)`,
-      [name, email.toLowerCase(), passwordHash]
+       (id, name, email, password, role, wallet_balance) 
+       VALUES (?, ?, ?, ?, 'user', 0.00)`,
+      [userId, name, email.toLowerCase(), passwordHash]
     );
 
-    const created = await db.query(
+    // Fetch the newly created record
+    const [created] = await db.query(
       `SELECT 
          id, name, email, role, wallet_balance, created_at,
          CASE WHEN role = 'admin' THEN true ELSE false END AS is_admin
        FROM users
-       WHERE email = ?`,
-      [email.toLowerCase()]
+       WHERE id = ?`,
+      [userId]
     );
 
-    const user = created.rows[0];
+    const user = created[0];
     const token = jwt.sign(
       { id: user.id, email: user.email, is_admin: !!user.is_admin },
       JWT_SECRET,
@@ -82,7 +88,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// LOGIN user
+// 3. LOGIN USER (Runs live validation against database records)
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -90,7 +96,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'email and password are required' });
     }
 
-    const result = await db.query(
+    const [rows] = await db.query(
       `SELECT 
          id, name, email, password, role, wallet_balance, created_at,
          CASE WHEN role = 'admin' THEN true ELSE false END AS is_admin
@@ -99,19 +105,14 @@ router.post('/login', async (req, res) => {
       [email.toLowerCase()]
     );
 
-    if (result.rows.length === 0) {
+    if (rows.length === 0) {
       return res.status(401).json({ error: 'no account found with this email' });
     }
 
-    const user = result.rows[0];
+    const user = rows[0];
 
-    let isValidPassword = false;
-    if (user.password && user.password.startsWith('$2')) {
-      isValidPassword = await bcrypt.compare(password, user.password);
-    } else {
-      // support plaintext demo passwords
-      isValidPassword = password === user.password;
-    }
+    // Strictly verify encrypted database strings (no hardcoded plaintext bypasses)
+    const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
       return res.status(401).json({ error: 'incorrect password' });
@@ -133,35 +134,35 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// UPDATE user role
+// 4. UPDATE USER ROLE DYNAMICALLY
 router.put('/:id/admin', async (req, res) => {
   try {
     const role = req.body.is_admin ? 'admin' : 'user';
     await db.query('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
 
-    const result = await db.query(
+    const [rows] = await db.query(
       `SELECT id, name, email, role, wallet_balance, created_at,
        CASE WHEN role = 'admin' THEN true ELSE false END AS is_admin
        FROM users WHERE id = ?`,
       [req.params.id]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ error: 'user not found' });
-    res.json(result.rows[0]);
+    if (rows.length === 0) return res.status(404).json({ error: 'user not found' });
+    res.json(rows[0]);
   } catch (error) {
     console.error('[put /api/users/:id/admin]', error.message);
     res.status(500).json({ error: 'failed to update user' });
   }
 });
 
-// DELETE user
+// 5. DELETE USER RECORD
 router.delete('/:id', async (req, res) => {
   try {
-    const check = await db.query('SELECT id FROM users WHERE id = ?', [req.params.id]);
-    if (check.rows.length === 0) return res.status(404).json({ error: 'user not found' });
+    const [check] = await db.query('SELECT id FROM users WHERE id = ?', [req.params.id]);
+    if (check.length === 0) return res.status(404).json({ error: 'user not found' });
 
     await db.query('DELETE FROM users WHERE id = ?', [req.params.id]);
-    res.json({ message: 'user deleted' });
+    res.json({ message: 'user record successfully deleted from database' });
   } catch (error) {
     console.error('[delete /api/users/:id]', error.message);
     res.status(500).json({ error: 'failed to delete user' });
