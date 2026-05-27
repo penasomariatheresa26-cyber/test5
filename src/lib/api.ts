@@ -1,5 +1,5 @@
-// API base URL - uses relative path in production, localhost in development
-const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:3001/api';
+// API base URL - Strictly set to relative path for Render deployment
+const API_BASE = '/api';
 
 // Helper function for API calls
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
