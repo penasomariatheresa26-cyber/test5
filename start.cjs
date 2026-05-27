@@ -11,35 +11,52 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Determine exactly where the routes are located
-const isServerFolderPresent = fs.existsSync(path.join(__dirname, 'server'));
-const baseFolder = isServerFolderPresent ? path.join(__dirname, 'server') : __dirname;
+// Determine folder structure cleanly
+const isServerFolder = fs.existsSync(path.join(__dirname, 'server'));
+const baseFolder = isServerFolder ? path.join(__dirname, 'server') : __dirname;
 
-console.log(`[Server Setup] Loading routes from base directory: ${baseFolder}`);
+console.log(`[System Info] Base folder resolved to: ${baseFolder}`);
 
-// Safe require helper to ensure we never feed 'undefined' to app.use
-function loadRouter(routerPath) {
-  const absolutePath = path.resolve(baseFolder, 'routes', routerPath);
-  if (!fs.existsSync(absolutePath)) {
-    console.error(`[CRITICAL ERROR] Route file missing at: ${absolutePath}`);
-    // Fallback emergency router so the whole app doesn't crash on startup
-    const fallback = express.Router();
-    fallback.all('*', (req, res) => res.status(500).json({ error: "Route module unavailable" }));
-    return fallback;
-  }
-  return require(absolutePath);
+// Create empty fallback routers so app.use NEVER receives 'undefined' and crashes
+let menuRouter = express.Router();
+let userRouter = express.Router();
+let ordersRouter = express.Router();
+
+// ========================================================
+// SAFE ROUTE LOADING (CRASH-PROOF)
+// ========================================================
+
+// 1. Load Menu Router
+try {
+  const targetPath = path.join(baseFolder, 'routes', 'menu.cjs');
+  console.log(`[Loading Route] Attempting to require: ${targetPath}`);
+  menuRouter = require(targetPath);
+} catch (err) {
+  console.error('[CRITICAL] Failed to load menu.cjs:', err.message);
+}
+
+// 2. Load Users Router
+try {
+  const targetPath = path.join(baseFolder, 'routes', 'users.cjs');
+  console.log(`[Loading Route] Attempting to require: ${targetPath}`);
+  userRouter = require(targetPath);
+} catch (err) {
+  console.error('[CRITICAL] Failed to load users.cjs:', err.message);
+}
+
+// 3. Load Orders Router
+try {
+  const targetPath = path.join(baseFolder, 'routes', 'orders.cjs');
+  console.log(`[Loading Route] Attempting to require: ${targetPath}`);
+  ordersRouter = require(targetPath);
+} catch (err) {
+  console.error('[CRITICAL] Failed to load orders.cjs:', err.message);
 }
 
 // ========================================================
-// RE-ALIGNED API ROUTES USING EXPLICIT RESOLUTIONS
+// REGISTER API ENDPOINTS (ALIASES INCLUDED)
 // ========================================================
 
-// Load modules safely
-const menuRouter = loadRouter('menu.cjs');
-const userRouter = loadRouter('users.cjs');
-const ordersRouter = loadRouter('orders.cjs');
-
-// Assign aliases for frontend consistency
 app.use('/api/menu', menuRouter);
 app.use('/api/products', menuRouter); 
 
@@ -51,7 +68,8 @@ app.use('/api/orders', ordersRouter);
 // Health Check
 app.get('/api/health', async (req, res) => {
   try {
-    const db = require(path.resolve(baseFolder, 'db.cjs'));
+    const dbPath = path.join(baseFolder, 'db.cjs');
+    const db = require(dbPath);
     const [rows] = await db.query('SELECT NOW() as time');
     res.json({ status: 'ok', database: 'connected', time: rows[0].time });
   } catch (error) {
@@ -61,7 +79,7 @@ app.get('/api/health', async (req, res) => {
 
 // Database Initialization (Wrapped safely)
 try {
-  const initDbPath = path.resolve(baseFolder, 'init-db.cjs');
+  const initDbPath = path.join(baseFolder, 'init-db.cjs');
   if (fs.existsSync(initDbPath)) {
     const initDb = require(initDbPath);
     initDb();
