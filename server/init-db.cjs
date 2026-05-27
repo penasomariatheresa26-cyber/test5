@@ -73,7 +73,7 @@ async function initDb() {
       await db.query(
         `
         INSERT INTO users 
-        (name, email, password_hash, role, wallet_balance) 
+        (name, email, password, role, wallet_balance) 
         VALUES (?, ?, ?, ?, ?)
         `,
         ['Admin User', 'admin@restaurant.com', 'admin123', 'admin', 0.00]
