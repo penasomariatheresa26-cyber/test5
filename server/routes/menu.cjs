@@ -3,14 +3,39 @@ const router = express.Router();
 const db = require('../db.cjs');
 const { v4: uuidv4 } = require('uuid');
 
-// 1. FETCH & SHOW ALL MENU ITEMS
-// This pulls live records to display directly on your menu/shop pages
+// 1. FETCH & SHOW ALL MENU ITEMS (Database Only)
 router.get('/', async (req, res) => {
   try {
+    // Ensure the table exists before querying to avoid database crashes
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS menu_items (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        price DECIMAL(10,2) NOT NULL,
+        image VARCHAR(255),
+        category VARCHAR(100),
+        available TINYINT(1) DEFAULT 1,
+        featured TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Fetch live records from database
     const [rows] = await db.query('SELECT * FROM menu_items ORDER BY created_at DESC');
-    res.json(rows);
+    
+    // Normalize properties for the frontend map functions
+    const formattedRows = rows.map(item => ({
+      ...item,
+      id: String(item.id),
+      price: parseFloat(item.price) || 0.00,
+      image: item.image || '',
+      image_url: item.image || '' // Maps both field types just in case
+    }));
+
+    res.json(formattedRows);
   } catch (err) {
-    console.error('[GET /api/menu]', err.message);
+    console.error('[GET /api/menu] Live Database Error:', err.message);
     res.status(500).json({ error: 'Failed to fetch menu items from database' });
   }
 });
@@ -22,7 +47,14 @@ router.get('/:id', async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Menu item not found' });
     }
-    res.json(rows[0]);
+    
+    const item = rows[0];
+    res.json({
+      ...item,
+      id: String(item.id),
+      price: parseFloat(item.price) || 0.00,
+      image_url: item.image || ''
+    });
   } catch (err) {
     console.error('[GET /api/menu/:id]', err.message);
     res.status(500).json({ error: 'Failed to fetch menu item' });
@@ -30,7 +62,6 @@ router.get('/:id', async (req, res) => {
 });
 
 // 3. ADD NEW MENU ITEM
-// Dynamically saves new features/items directly to your database records
 router.post('/', async (req, res) => {
   try {
     const { name, description, price, image, category, available, featured } = req.body;
@@ -39,31 +70,17 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const id = uuidv4(); // Generate unique ID for the new record
-
-    // Convert booleans safely for MySQL TINYINT columns (1 = true, 0 = false)
+    const id = uuidv4(); 
     const isAvailable = available !== undefined ? (available ? 1 : 0) : 1;
     const isFeatured = featured !== undefined ? (featured ? 1 : 0) : 0;
 
     await db.query(
-      `INSERT INTO menu_items 
-       (id, name, description, price, image, category, available, featured)
+      `INSERT INTO menu_items (id, name, description, price, image, category, available, featured)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        name,
-        description,
-        parseFloat(price), // Ensure price is handled as a decimal/float
-        image || '',       
-        category,
-        isAvailable,
-        isFeatured
-      ]
+      [id, name, description, parseFloat(price), image || '', category, isAvailable, isFeatured]
     );
 
-    // Confirm the record was created successfully
     const [rows] = await db.query('SELECT * FROM menu_items WHERE id = ?', [id]);
-
     res.status(201).json({ success: true, item: rows[0] });
   } catch (err) {
     console.error('[POST /api/menu]', err.message);
@@ -72,13 +89,11 @@ router.post('/', async (req, res) => {
 });
 
 // 4. UPDATE MENU ITEM DYNAMICALLY
-// Modifies database records so changes display instantly on the exact pages
 router.put('/:id', async (req, res) => {
   try {
     const { name, description, price, image, category, available, featured } = req.body;
     const itemId = req.params.id;
 
-    // Check if the item exists first
     const [check] = await db.query('SELECT id FROM menu_items WHERE id = ?', [itemId]);
     if (check.length === 0) {
       return res.status(404).json({ error: 'Menu item not found' });
@@ -94,7 +109,6 @@ router.put('/:id', async (req, res) => {
       [name, description, parseFloat(price), image || '', category, isAvailable, isFeatured, itemId]
     );
 
-    // Fetch updated record to return to front-end
     const [updatedRows] = await db.query('SELECT * FROM menu_items WHERE id = ?', [itemId]);
     res.json({ success: true, item: updatedRows[0] });
   } catch (err) {
@@ -104,7 +118,6 @@ router.put('/:id', async (req, res) => {
 });
 
 // 5. DELETE MENU ITEM
-// Completely removes item data from the database
 router.delete('/:id', async (req, res) => {
   try {
     const itemId = req.params.id;
