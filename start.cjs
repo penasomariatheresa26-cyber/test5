@@ -15,10 +15,22 @@ app.use(express.urlencoded({ extended: true }));
 const useServerSubfolder = fs.existsSync(path.join(__dirname, 'server'));
 const backendPath = useServerSubfolder ? './server' : '.';
 
-// API Routes
-app.use('/api/menu', require(`${backendPath}/routes/menu.cjs`));
+// ========================================================
+// FIXED API ROUTES WITH ALIASES FOR FRONTEND COMPATIBILITY
+// ========================================================
+
+// Both /api/menu and /api/products will now point to your menu router
+const menuRouter = require(`${backendPath}/routes/menu.cjs`);
+app.use('/api/menu', menuRouter);
+app.use('/api/products', menuRouter); 
+
+// Both /api/users and /api/auth will now point to your users router
+const userRouter = require(`${backendPath}/routes/users.cjs`);
+app.use('/api/users', userRouter);
+app.use('/api/auth', userRouter); 
+
+// Orders Route
 app.use('/api/orders', require(`${backendPath}/routes/orders.cjs`));
-app.use('/api/users', require(`${backendPath}/routes/users.cjs`));
 
 // Health Check
 app.get('/api/health', async (req, res) => {
