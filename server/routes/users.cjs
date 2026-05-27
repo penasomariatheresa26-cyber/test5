@@ -55,9 +55,7 @@ router.post('/register', async (req, res) => {
 
     // Save record to database
     await db.query(
-      `INSERT INTO users 
-       (id, name, email, password, role, wallet_balance) 
-       VALUES (?, ?, ?, ?, 'user', 0.00)`,
+     const query = "INSERT INTO users (name, email, password, role, wallet_balance) VALUES (?, ?, ?, 'customer', 0.00)";
       [userId, name, email.toLowerCase(), passwordHash]
     );
 
