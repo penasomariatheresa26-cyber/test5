@@ -272,7 +272,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
               </div>
               <div className="bg-gray-50 border border-gray-200 text-gray-600 text-sm px-4 py-3 rounded-xl">
                 <p className="font-semibold text-gray-700 mb-1">Demo Admin Account:</p>
-                <p>📧 Email: <span className="font-mono bg-white px-2 py-0.5 rounded text-primary">admin@theresse.com</span></p>
+                <p>📧 Email: <span className="font-mono bg-white px-2 py-0.5 rounded text-primary">admin@restaurant.com</span></p>
                 <p>🔑 Password: <span className="font-mono bg-white px-2 py-0.5 rounded text-primary">admin123</span></p>
               </div>
             </div>
