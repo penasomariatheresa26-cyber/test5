@@ -4,9 +4,6 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../db.cjs');
 const { v4: uuidv4 } = require('uuid');
-// Inside your register route, BEFORE the database query:
-const salt = await bcrypt.genSalt(10);
-const hashedPassword = await bcrypt.hash(password, salt);
 
 // Then pass `hashedPassword` into your database query instead of the plain `password`
 
