@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db.cjs');
 
-// GET /api/orders — fetch orders with items from MySQL
+// 1. GET ALL ORDERS (Fetches records with items dynamically for the exact pages)
 router.get('/', async (req, res) => {
   try {
     const { user_id, is_admin } = req.query;
@@ -15,11 +15,12 @@ router.get('/', async (req, res) => {
     }
     orderSql += ' ORDER BY created_at DESC';
 
-    const ordersResult = await db.query(orderSql, orderParams);
+    // Use MySQL array destructuring [ordersRows] instead of .rows
+    const [ordersRows] = await db.query(orderSql, orderParams);
 
     const orders = [];
-    for (const row of ordersResult.rows) {
-      const itemsResult = await db.query(
+    for (const row of ordersRows) {
+      const [itemsRows] = await db.query(
         `SELECT oi.id, oi.quantity, oi.price,
                 m.id as m_id, m.name as m_name, m.description as m_description,
                 m.price as m_price, m.image as m_image, m.category as m_category,
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
         [row.id]
       );
 
-      const items = itemsResult.rows.map(i => ({
+      const items = itemsRows.map(i => ({
         menuItem: {
           id: i.m_id,
           name: i.m_name,
@@ -61,22 +62,24 @@ router.get('/', async (req, res) => {
     res.json(orders);
   } catch (error) {
     console.error('[GET /api/orders]', error.message);
-    res.status(500).json({ error: 'Failed to fetch orders' });
+    res.status(500).json({ error: 'Failed to fetch orders from database' });
   }
 });
 
-// POST /api/orders — insert order + items (transaction)
+// 2. POST ORDER (Saves orders and items cleanly into database records via transaction)
 router.post('/', async (req, res) => {
-  const conn = await db.pool.connect();
+  // Correct method to obtain a separate connection from the mysql2 pool
+  const conn = await db.getConnection();
   try {
-    await conn.query('START TRANSACTION');
+    // Start MySQL Transaction cleanly
+    await conn.beginTransaction();
 
     const { id, user_id, customer_name, address, phone, payment_method, total, items } = req.body;
     const orderId = id || 'ORD-' + Date.now();
 
-    // insert into orders table
+    // Insert into orders table
     await conn.query(
-      'INSERT INTO orders (id,user_id,customer_name,address,phone,payment_method,status,total,created_at) VALUES (?,?,?,?,?,?,?,?,NOW())',
+      'INSERT INTO orders (id, user_id, customer_name, address, phone, payment_method, status, total, created_at) VALUES (?,?,?,?,?,?,?,?,NOW())',
       [
         orderId,
         user_id,
@@ -89,18 +92,20 @@ router.post('/', async (req, res) => {
       ]
     );
 
+    // Loop through items and record dynamically
     for (const item of items) {
       const itemId = 'OI-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
       await conn.query(
-        'INSERT INTO order_items (id,order_id,menu_item_id,quantity,price) VALUES (?,?,?,?,?)',
+        'INSERT INTO order_items (id, order_id, menu_item_id, quantity, price) VALUES (?,?,?,?,?)',
         [itemId, orderId, item.menuItem.id, item.quantity, parseFloat(item.menuItem.price)]
       );
     }
 
-    await conn.query('COMMIT');
-    console.log(`[NEW ORDER] ${orderId} → ₱${total} → ${items.length} items → MySQL`);
+    // Commit changes to the database permanently
+    await conn.commit();
+    console.log(`[NEW ORDER LOGGED] ${orderId} → ₱${total} → MySQL`);
 
-    // return full order object including items so frontend and admin dashboard can update immediately
+    // Return full order object so front-end dashboards refresh instantly
     res.status(201).json({
       id: orderId,
       user_id,
@@ -118,15 +123,17 @@ router.post('/', async (req, res) => {
       })),
     });
   } catch (error) {
-    await conn.query('ROLLBACK');
-    console.error('[POST /api/orders]', error.message);
-    res.status(500).json({ error: 'Failed to create order' });
+    // Rollback changes immediately if any query fails
+    await conn.rollback();
+    console.error('[POST /api/orders Transaction Failed]', error.message);
+    res.status(500).json({ error: 'Failed to create database order record' });
   } finally {
+    // Always release connection back to the pool
     conn.release();
   }
 });
 
-// PUT /api/orders/:id/status
+// 3. PUT ORDER STATUS (Updates status so exact status renders dynamically on user/admin pages)
 router.put('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
@@ -134,13 +141,16 @@ router.put('/:id/status', async (req, res) => {
     if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
     await db.query('UPDATE orders SET status = ? WHERE id = ?', [status, req.params.id]);
-    const result = await db.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
-    console.log(`[ORDER STATUS] ${req.params.id} → ${status} → MySQL`);
-    res.json(result.rows[0]);
+    
+    // Check if item exists using MySQL array destructuring
+    const [rows] = await db.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    
+    console.log(`[ORDER STATUS UPDATED] ${req.params.id} → ${status} → Live`);
+    res.json(rows[0]);
   } catch (error) {
     console.error('[PUT /api/orders/:id/status]', error.message);
-    res.status(500).json({ error: 'Failed to update status' });
+    res.status(500).json({ error: 'Failed to update order status record' });
   }
 });
 
