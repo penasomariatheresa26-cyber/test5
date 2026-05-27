@@ -1,7 +1,6 @@
 const bcrypt = require('bcrypt'); // Make sure this is at the top of your file
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db.cjs');
 const { v4: uuidv4 } = require('uuid');
