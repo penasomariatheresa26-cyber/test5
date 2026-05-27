@@ -17,20 +17,26 @@ const baseFolder = isServerFolder ? path.join(__dirname, 'server') : __dirname;
 
 console.log(`[System Info] Base folder resolved to: ${baseFolder}`);
 
-// Create empty fallback routers so app.use NEVER receives 'undefined' and crashes
-let menuRouter = express.Router();
-let userRouter = express.Router();
-let ordersRouter = express.Router();
+// Create bulletproof fallback middleware functions instead of empty router instances
+const dummyMiddleware = (req, res) => res.status(503).json({ error: "Service temporary unavailable" });
+let menuRouter = dummyMiddleware;
+let userRouter = dummyMiddleware;
+let ordersRouter = dummyMiddleware;
 
 // ========================================================
-// SAFE ROUTE LOADING (CRASH-PROOF)
+// SAFE ROUTE LOADING
 // ========================================================
 
 // 1. Load Menu Router
 try {
   const targetPath = path.join(baseFolder, 'routes', 'menu.cjs');
   console.log(`[Loading Route] Attempting to require: ${targetPath}`);
-  menuRouter = require(targetPath);
+  const moduleExport = require(targetPath);
+  if (typeof moduleExport === 'function' || (moduleExport && typeof moduleExport.use === 'function')) {
+    menuRouter = moduleExport;
+  } else {
+    console.error(`[WARNING] menu.cjs did not export a valid router function.`);
+  }
 } catch (err) {
   console.error('[CRITICAL] Failed to load menu.cjs:', err.message);
 }
@@ -39,7 +45,12 @@ try {
 try {
   const targetPath = path.join(baseFolder, 'routes', 'users.cjs');
   console.log(`[Loading Route] Attempting to require: ${targetPath}`);
-  userRouter = require(targetPath);
+  const moduleExport = require(targetPath);
+  if (typeof moduleExport === 'function' || (moduleExport && typeof moduleExport.use === 'function')) {
+    userRouter = moduleExport;
+  } else {
+    console.error(`[WARNING] users.cjs did not export a valid router function.`);
+  }
 } catch (err) {
   console.error('[CRITICAL] Failed to load users.cjs:', err.message);
 }
@@ -48,22 +59,33 @@ try {
 try {
   const targetPath = path.join(baseFolder, 'routes', 'orders.cjs');
   console.log(`[Loading Route] Attempting to require: ${targetPath}`);
-  ordersRouter = require(targetPath);
+  const moduleExport = require(targetPath);
+  if (typeof moduleExport === 'function' || (moduleExport && typeof moduleExport.use === 'function')) {
+    ordersRouter = moduleExport;
+  } else {
+    console.error(`[WARNING] orders.cjs did not export a valid router function.`);
+  }
 } catch (err) {
   console.error('[CRITICAL] Failed to load orders.cjs:', err.message);
 }
 
 // ========================================================
-// REGISTER API ENDPOINTS (ALIASES INCLUDED)
+// STRICT VALIDATION BEFORE REGISTERING ENDPOINTS
 // ========================================================
 
-app.use('/api/menu', menuRouter);
-app.use('/api/products', menuRouter); 
+if (typeof menuRouter === 'function' || (menuRouter && typeof menuRouter.use === 'function')) {
+  app.use('/api/menu', menuRouter);
+  app.use('/api/products', menuRouter); 
+}
 
-app.use('/api/users', userRouter);
-app.use('/api/auth', userRouter); 
+if (typeof userRouter === 'function' || (userRouter && typeof userRouter.use === 'function')) {
+  app.use('/api/users', userRouter);
+  app.use('/api/auth', userRouter); 
+}
 
-app.use('/api/orders', ordersRouter);
+if (typeof ordersRouter === 'function' || (ordersRouter && typeof ordersRouter.use === 'function')) {
+  app.use('/api/orders', ordersRouter);
+}
 
 // Health Check
 app.get('/api/health', async (req, res) => {
